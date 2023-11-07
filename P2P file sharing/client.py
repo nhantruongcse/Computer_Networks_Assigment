@@ -9,12 +9,19 @@ import os # de lay size cua file
 from PIL import Image, ImageTk 
 from tkinter import messagebox
 import threading #chạy đa luồng
+import re
 
+
+# region 0: Define a global variable to hold the main window
+main_window = None
+username_dis = ""
 SERVER_P2P= NONE
 stop_event = threading.Event()
 stop_event.clear()
 
-# region 0: Tao host va connect server, tạo server p2p
+# endregion
+
+# region 1: Tao host va connect server, tạo server p2p
 
 HOST = "127.0.0.1"
 PORT = 8080
@@ -28,11 +35,9 @@ SERVER_P2P.bind((client_ip, client_port))
 print(f'* Running on http://{client_ip,}:{client_port}')
 # endregion
 
-
-#region 1: handle_p2p: xử lý request download P2P từ client khác
+# region 2: handle_p2p: xử lý request download P2P từ client khác
 def listening_p2p(client_ip,client_port):
     def stop(self):
-        print("su dung chuogn tu stop self")
         self.running = False
         socket.socket(socket.AF_INET, 
                     socket.SOCK_STREAM).connect( (self.hostname, self.port))
@@ -59,7 +64,6 @@ def _handle_p2p(conn, addr, SERVER_P2P): # xử lý yêu cầu download của cl
     while main_window:
         # Chấp nhận kết nối từ client yêu cầu
         data = conn.recv(1024).decode()
-        print(data)
         #nếu không có data thì thoát khỏi vòng lặp để chạy hàm handle khác
         if not data: 
             break
@@ -68,10 +72,8 @@ def _handle_p2p(conn, addr, SERVER_P2P): # xử lý yêu cầu download của cl
         if data_dict['method'] == 'download':
             path = data_dict['path']
             if os.path.exists(path):
-            #     if os.path.isfile(path):
-            #         print(f"Đường dẫn '{path}' là một tệp.")
-            #     else:
-            #         print(f"Đường dẫn '{path}' không phải là tệp.")
+                confirm = {   'error': 'No' }
+                conn.sendall(json.dumps(confirm).encode())  
                 BUFFER_SIZE = 1024  # Kích thước của mỗi phần dữ liệu
                 while True:
                     # Chấp nhận kết nối từ client yêu cầu                    # Đường dẫn của tệp cần gửi
@@ -85,16 +87,12 @@ def _handle_p2p(conn, addr, SERVER_P2P): # xử lý yêu cầu download của cl
                     finally:
                         # Đóng kết nối với client yêu cầu                        
                         break
-                conn.close()
-                
+            else:
+                confirm = {   'error': 'Yes' }
+                conn.sendall(json.dumps(confirm).encode())        
+            conn.close()
 
 #endregion
-
-
-# region 2: Define a global variable to hold the main window
-main_window = None
-username_dis = ""
-# endregion
 
 # region 3: Đăng nhập, tạo Account
 
@@ -143,10 +141,10 @@ def register_Response():
     #print(res)
     if res == 'success':
         # Đóng cửa sổ đăng nhập
-        print("Tạo account thành công")
+        #print("Tạo account thành công")
         messagebox.showinfo("Thông báo", "Tạo account thành công, hãy đăng nhập")
     else:
-        print("Tạo account thất bại")
+        #print("Tạo account thất bại")
         messagebox.showinfo("Thông báo","Tạo account đã tồn tại, tạo account khác hoặc đăng nhập")
 
 # endregion
@@ -162,8 +160,12 @@ def searchButtonClicked(entry_filenameDownload,lst_respond):
         lst_respond.delete(*lst_respond.get_children())
         for item in lst_get:          
             response = ping(item[0])
-            print(response)
-            lst_respond.insert("",tk.END, text=f"Máy {stt}",values=(item[0],item[1],item[2],item[3],response))
+            tree = tk.Text()
+            tree.insert("end", response )  # Chèn kết quả của ping vào Text
+            text = tree.get("1.0", "end")
+            match = re.search(r"Round Trip Times min/avg/max is (\d+\.\d+)/(\d+\.\d+)/(\d+\.\d+)", text)
+            min_value, avg_value, max_value = map(float, match.groups())  
+            lst_respond.insert("",tk.END, text=f"Máy {stt}",values=(item[0],item[1],item[2],item[3],avg_value))
             stt=stt+1
         lst_respond.pack()
 
@@ -187,13 +189,52 @@ def receiveAddressFromServer():
         # Thực hiện p2p với client(address) chứa file
         return json.loads(res)
 
+def download(ip_select,port_select,path_select,file_name):
+    #print('ip_select ',ip_select )
+    #print('port_select ',port_select)
+    # Đường dẫn để lưu tệp tải về
+    save_directory = f"{username_dis}_downloaded"
+    if not os.path.exists(save_directory):
+        os.makedirs(save_directory)
+
+    # Tạo yêu cầu để gửi tên tệp cần tải về
+    request_download = {
+        'method': 'download',
+        'path':path_select
+        }
+
+    try:
+        client_request =socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client_request .connect((ip_select, port_select))
+        json_data = json.dumps(request_download)
+        client_request.send(json_data.encode())
+        data = client_request.recv(1024)
+        data_dict = json.loads(data)
+        if data_dict ['error'] == "No":        
+        # Đường dẫn để lưu tệp tải về
+            save_path = os.path.join(save_directory, file_name)
+            with open(save_path, 'wb') as file:
+                while True:
+                    data = client_request.recv(1024)  # Nhận dữ liệu theo phần
+                    if not data:
+                        break
+                    file.write(data)
+            #print("Tải về hoàn thành.")
+            messagebox.showinfo("Thông báo","Tải về hoàn thành")
+        else:
+           messagebox.showerror("Error", "File trên máy chủ không còn tồn tại") 
+    except Exception as e:
+        # Xử lý lỗi khi giải mã JSON hoặc trong quá trình tải về
+        messagebox.showerror("Error", f"Download error: {str(e)}")
+    finally:
+        client_request.close()
 # Mở cửa sổ download
 def openDownloadWindow():
     global main_window
     main_window.withdraw()
     download_window = tk.Tk()
-    download_window.title("Download")
-    download_window.geometry('500x500')
+    download_window.title(f"Download - Client: {username_dis}")
+    download_window.geometry('500x600')
     # Các thành phần và layout cho phần download
     label_name = tk.Label(download_window, text="Filename to download:", bg='#eb85de')
     label_name.pack()
@@ -219,7 +260,7 @@ def openDownloadWindow():
 
     def download_file():
         item_focus =lst_respond.focus()
-        print(lst_respond.item(lst_respond.focus()))
+        #print(lst_respond.item(lst_respond.focus()))
         # if not lst_respond.selection():
         #      tk.messagebox.showerror("Error", "Please select a file to download.")            
         # else:            
@@ -227,47 +268,17 @@ def openDownloadWindow():
         port_select = lst_respond.item(item_focus)['values'][1]
         path_select = lst_respond.item(item_focus)['values'][3]
         file_name = entry_filenameDownload.get() 
-        print('ip_select ',ip_select )
-        print('port_select ',port_select)
-        # Đường dẫn để lưu tệp tải về
-        save_directory = f"{username_dis}_downloaded"
-        if not os.path.exists(save_directory):
-            os.makedirs(save_directory)
-
-        # Tạo yêu cầu để gửi tên tệp cần tải về
-        request_download = {'method': 'download','path':path_select}
-
-        try:
-            client_request =socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            client_request .connect((ip_select, port_select))
-            json_data = json.dumps(request_download)
-            client_request.send(json_data.encode())
-        
-        # Đường dẫn để lưu tệp tải về
-            save_path = os.path.join(save_directory, file_name)
-            with open(save_path, 'wb') as file:
-                while True:
-                    data = client_request.recv(1024)  # Nhận dữ liệu theo phần
-                    if not data:
-                        break
-                    file.write(data)
-            print("Tải về hoàn thành.")
-            messagebox.showinfo("Thông báo","Tải về hoàn thành")
-        except Exception as e:
-            # Xử lý lỗi khi giải mã JSON hoặc trong quá trình tải về
-            tk.messagebox.showerror("Error", f"Download error: {str(e)}")
-        finally:
-            client_request.close()
+        download(ip_select,port_select,path_select,file_name)
 
     search_button = tk.Button(download_window, text="Search File", width=10,command=lambda: searchButtonClicked(entry_filenameDownload, lst_respond))
-    bt_download = tk.Button(download_window,width=10, text="Download", command=download_file)  
+    bt_download = tk.Button(download_window,width=10, text="Download", command=lambda:download_file())  
     search_button.pack(pady=10)        
     lst_respond.pack(pady=10)
     bt_download.pack(pady=10)
-    back_button = tk.Button(download_window, text="Back", command=lambda:( download_window.destroy(),chooseLayout())  )  
+    back_button = tk.Button(download_window, text="Back", command=lambda:(download_window.destroy(), main_window.deiconify())  )  
     back_button.pack(side="bottom", anchor="sw", pady=20, padx=20)
     download_window.mainloop()
-    #threading.Thread(target=download_window.mainloop, args=()).start()   
+  
 
 # endregion
 
@@ -276,9 +287,13 @@ def openDownloadWindow():
 def uploadButtonClicked(entry_filenameUpload, entry_file_path, label_file_size):
     filename = entry_filenameUpload.get()
     path = entry_file_path.get()
-    file_Size = label_file_size.cget("text")
-    print(file_Size)
+    file_Size = ''
+    if isinstance(label_file_size,tk.Label):
+        file_Size = label_file_size.cget("text")
+    else:
+        file_Size = 'Unknow'
     sendInformationOfFileToServerToSaveToDatabase(filename,file_Size , path)
+
 def sendInformationOfFileToServerToSaveToDatabase(filename, size, path):
     if path!="" and filename!="":
         data = {
@@ -315,7 +330,7 @@ def openUploadWindow():
     #Tạo trường nhập liệu
     entry_filenameUpload = tk.Entry(upload_window)
     entry_filenameUpload.pack()
-    back_button = tk.Button(upload_window, text="Back", command=lambda: (upload_window.destroy(), chooseLayout()))
+    back_button = tk.Button(upload_window, text="Back", command=lambda: (upload_window.destroy(), main_window.deiconify()))
     back_button.pack(side="bottom", anchor="sw", pady=20, padx=20)
     # Khung chọn file
     def browse_file():
@@ -324,7 +339,7 @@ def openUploadWindow():
         entry_file_path.insert(tk.END, file_path)
         if file_path:
             file_size = os.path.getsize(file_path)
-            if file_size <1000:
+            if file_size <(1024*1024):
                 file_size_text = f"{round(file_size / 1024, 0)} kb"
             else:
                 file_size_text = f"{round(file_size / (1024 * 1024), 2)} Mb"
@@ -336,7 +351,7 @@ def openUploadWindow():
     entry_file_path = tk.Entry(upload_window)
     entry_file_path.pack(pady=10)
 
-    button_browse = tk.Button(upload_window, text="Choose File", command=browse_file)
+    button_browse = tk.Button(upload_window, text="Choose File", command= lambda:browse_file())
     button_browse.pack(pady=10)
     label_size = tk.Label(upload_window, text="File Size:")
     label_size.pack(pady=10)
@@ -388,7 +403,7 @@ def file_manager():
         selected_items = lst_respond.selection()
         if selected_items:
             file_select = lst_respond.item(selected_items[0])['values'][0]  # Lấy giá trị của cột "File name" của dòng được chọn
-            print(file_select)
+            #print(file_select)
             data = {
                 'filename': file_select,
                 'method': 'remove',
@@ -421,29 +436,35 @@ def file_manager():
         else:
             messagebox.showerror("Lỗi", "Xóa không thành công")
 
-    bt_delete = tk.Button(file_window, text="Remove", width=10, command=remove_file)
+    bt_delete = tk.Button(file_window, text="Remove", width=10, command=lambda: remove_file())
     bt_delete.pack(pady=10)
-    back_button = tk.Button(file_window, text="Back", command=lambda: (file_window .destroy(),chooseLayout()))
+    back_button = tk.Button(file_window, text="Back", command=lambda: (file_window.destroy(),main_window.deiconify()))
     back_button.pack(side="bottom", anchor="sw", pady=20, padx=20)
     file_window.mainloop()
-
-
-
 
 # endregion
 
 # region 7: Mở cửa sổ chọn layout và Ping
+def reset():
+    data = {
+        'method' : 'reset',
+        'username': username_dis,
+    }
+    json_data = json.dumps(data)
+    CLIENTSOCKET.send(json_data.encode())
 
+# quản lý UI chính         
 def chooseLayout():
     global main_window
     def close_windows():
         stop_event.set()
-        print("stop set")
+        reset()
+        #print("stop set")
         main_window.destroy()
     if main_window==None:    
         main_window = tk.Tk()
         main_window.title(f"File Upload/Download - Client: {username_dis}")
-        main_window.geometry('500x500')
+        main_window.geometry('500x600')
     # Tạo frame chứa hình ảnh ở giữa góc trên
         # Thay đổi đường dẫn và tên tệp ảnh tương ứng
         canvas = tk.Canvas(main_window, width=400, height=200)
@@ -454,12 +475,12 @@ def chooseLayout():
         image = tk.PhotoImage(file=image_path)
         canvas.create_image(200, 100, image=image)  # Đặt hình ảnh vào giữa của Canvas
         # Tạo nút "Download" và "Upload" và gán cho các hàm tương ứng
-        download_button = tk.Button(main_window, text="Download",width=15, command=openDownloadWindow)
+        download_button = tk.Button(main_window, text="Download",width=15, command= lambda:openDownloadWindow())
         download_button.pack(pady=10)
 
-        upload_button = tk.Button(main_window, text="Upload",width=15, command=openUploadWindow)
+        upload_button = tk.Button(main_window, text="Upload",width=15, command=lambda:openUploadWindow())
         upload_button.pack(pady=10)
-        bt_file_manager = tk.Button(main_window, text="File Manager",width=15, command= file_manager)  
+        bt_file_manager = tk.Button(main_window, text="File Manager",width=15, command=lambda: file_manager())  
         bt_file_manager.pack(pady=10) 
         
         thread_server_p2p = threading.Thread(target=listening_p2p, args=(client_ip,client_port))
@@ -467,15 +488,47 @@ def chooseLayout():
     else:
         main_window.deiconify()
     main_window.protocol("WM_DELETE_WINDOW", close_windows)
+
+    def control_terminal(input_entry):
+        string_code = input_entry.get()
+        spell_code = string_code.split() 
+
+        if len(spell_code)==3:
+            if spell_code[0]== 'publish':
+                sendInformationOfFileToServerToSaveToDatabase(spell_code[1],"Unknow", spell_code[2])                
+            else:
+                messagebox.showinfo("Thông báo","vui lòng nhập vào terminal đúng định dạng code")
+        elif len(spell_code)==2:
+            if  spell_code[0]== 'fetch':
+                lst_get =  sendFilenameToServerToFind(spell_code[1])
+                if lst_get== []:
+                    messagebox.showinfo("Thông báo","Không tồn tại file trên hệ thống/ các máy client đang offline, vui lòng thử lại sau")
+                else:
+                    target = lst_get[0]
+                    #print(target)
+                    ip_select = target[0]
+                    port_select= target[1]
+                    path_select = target[3]
+                    filename = spell_code[1]
+                    download(ip_select,port_select,path_select, filename)                    
+            else:
+                messagebox.showinfo("Thông báo","vui lòng nhập vào terminal đúng định dạng code")
+        else:
+            messagebox.showinfo("Thông báo","vui lòng nhập vào terminal đúng định dạng code")
+    #Tạo trường nhập liệu
+    entry_terminal = tk.Entry(main_window,width=70)
+    entry_terminal.pack(pady=10)
+    # Nút run
+    bt_run = tk.Button(main_window, text="Run Code",width=15, command=lambda:control_terminal(entry_terminal))  
+    bt_run.pack(pady=10)
     main_window.mainloop()
-    #threading.Thread(target=download_window.mainloop, args=()).start()
     
 # endregion
 
 # region 8: Tạo giao diện đăng nhập
 login_window = tk.Tk()
 login_window.title("Login Window")
-login_window.geometry("500x500")
+login_window.geometry("500x600")
 
 # Tạo canvas để chứa hình ảnh
 canvas = tk.Canvas(login_window, width=400, height=200)
