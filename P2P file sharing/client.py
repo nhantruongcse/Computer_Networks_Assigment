@@ -54,7 +54,6 @@ def listening_p2p(client_ip,client_port):
                 thread_p2p_host = threading.Thread(target=_handle_p2p, args=(conn, addr, SERVER_P2P))
                 thread_p2p_host.start()
         stop()
-        SERVER_P2P.close()
     except socket.error as e:
         print(f'socket error: {e}')
         print('socket error: %s' %(e))  
@@ -458,7 +457,9 @@ def chooseLayout():
     global main_window
     def close_windows():
         stop_event.set()
-        reset()
+        CLIENTSOCKET.close()
+        SERVER_P2P.close()
+        #reset()
         #print("stop set")
         main_window.destroy()
     if main_window==None:    

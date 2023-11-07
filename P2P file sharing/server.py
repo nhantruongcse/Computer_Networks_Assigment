@@ -8,6 +8,10 @@ from tkinter import ttk
 from tkinter import messagebox
 from pythonping import ping
 
+#region 0 : RUN SERVER
+HOST = "127.0.0.1"
+PORT = 8080
+SERVER = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
 def server():
     #nhận dữ liệu khi server chấp nhận kết nối socket
@@ -139,11 +143,8 @@ def server():
                 conn.send(res_dict.encode())                
                 if not stop_event:
                     break
-                #conn.close() # đóng kết nối
-                #break #thoát khỏi vòng lặp để nhận handle khắc
-    HOST = "127.0.0.1"
-    PORT = 8080
-    SERVER = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+
     try:
         SERVER.bind((HOST, PORT))
         print(f'* Running on http://{HOST}:{PORT}')
@@ -159,8 +160,10 @@ def server():
             thread = threading.Thread(target=_handle, args=(conn, addr))
             thread.start()
     print("Close")
-    SERVER.close()
-# region 0: tao giao diện cho server
+    
+# endregion
+
+# region 1: tao giao diện cho server
     
 def UI():
     # ham refresh UI View
@@ -268,7 +271,8 @@ def UI():
     bt_refresh = tk.Button(server_windows, text="Refresh",width=15, command= refresh_lst_respond)  
     bt_refresh.pack(pady=10)
     def close_windows():
-        stop_event.set()
+        stop_event.set()   
+        SERVER.close()
         #print("thay doi stop_even:", stop_event.is_set())
         server_windows.destroy()  
     server_windows.protocol("WM_DELETE_WINDOW", close_windows)
@@ -281,6 +285,7 @@ def UI():
     bt_run = tk.Button(server_windows, text="Run Code",width=15, command=lambda:control_terminal(entry_terminal))  
     bt_run.pack(pady=10)
     
+    server_windows.protocol("WM_DELETE_WINDOW", close_windows)
     server_windows.mainloop()
     #endregion
     
